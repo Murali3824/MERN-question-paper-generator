@@ -27,68 +27,60 @@ const getQuestions = async (filters, btLevel, type, count) => {
 
 const getRandomQuestionsWithConstraints = async (filters, config, type) => {
     const questions = [];
+    const usedBtLevels = new Set();
+    const availableBtLevels = Object.keys(config.btLevelCounts).map(Number).sort();
 
     if (config.useUnitWise) {
-        for (const [unit, totalUnitCount] of Object.entries(config.unitCounts)) {
-            if (totalUnitCount <= 0) continue;
+        const sortedUnits = Object.entries(config.unitCounts)
+            .filter(([_, count]) => count > 0)
+            .sort(([unitA], [unitB]) => parseInt(unitA) - parseInt(unitB));
+
+        for (const [unit, unitCount] of sortedUnits) {
+            let assignedBtLevel = null;
+
+            for (const btLevel of availableBtLevels) {
+                if (!usedBtLevels.has(btLevel)) {
+                    assignedBtLevel = btLevel;
+                    usedBtLevels.add(btLevel);
+                    break;
+                }
+            }
+
+            if (!assignedBtLevel) {
+                console.warn(`No available BT levels for unit ${unit}, trying fallback`);
+                assignedBtLevel = availableBtLevels[0]; // Fallback to the first available BT level
+            }
 
             const unitFilters = { ...filters, unit: parseInt(unit) };
+            const availableQuestions = await getQuestions(unitFilters, assignedBtLevel, type, unitCount);
 
-            if (config.useBtLevels) {
-                const btLevelCounts = { ...config.btLevelCounts };
-                const totalBtCount = Object.values(btLevelCounts).reduce(
-                    (a, b) => a + b,
-                    0
-                );
-
-                const unitBtCounts = {};
-                for (const [btLevel, btCount] of Object.entries(btLevelCounts)) {
-                    unitBtCounts[btLevel] = Math.round(
-                        (btCount / totalBtCount) * totalUnitCount
-                    );
-                }
-
-                for (const [btLevel, count] of Object.entries(unitBtCounts)) {
-                    if (count <= 0) continue;
-
-                    const availableQuestions = await getQuestions(
-                        unitFilters,
-                        btLevel,
-                        type,
-                        count
-                    );
-                    questions.push(...availableQuestions.slice(0, count));
-                }
+            if (availableQuestions.length > 0) {
+                questions.push(...availableQuestions.slice(0, unitCount));
             } else {
-                const availableQuestions = await getQuestions(
-                    unitFilters,
-                    null,
-                    type,
-                    totalUnitCount
-                );
-                questions.push(...availableQuestions.slice(0, totalUnitCount));
+                console.warn(`No questions found for unit ${unit} with BT level ${assignedBtLevel}, attempting fallback`);
+                
+                // Try another available BT level
+                for (const fallbackLevel of availableBtLevels) {
+                    if (fallbackLevel !== assignedBtLevel) {
+                        const fallbackQuestions = await getQuestions(unitFilters, fallbackLevel, type, unitCount);
+                        if (fallbackQuestions.length > 0) {
+                            questions.push(...fallbackQuestions.slice(0, unitCount));
+                            break;
+                        }
+                    }
+                }
             }
         }
     } else {
         if (config.useBtLevels) {
             for (const [btLevel, count] of Object.entries(config.btLevelCounts)) {
                 if (count <= 0) continue;
-
-                const availableQuestions = await getQuestions(
-                    filters,
-                    btLevel,
-                    type,
-                    count
-                );
+                
+                const availableQuestions = await getQuestions(filters, parseInt(btLevel), type, count);
                 questions.push(...availableQuestions.slice(0, count));
             }
         } else {
-            const availableQuestions = await getQuestions(
-                filters,
-                null,
-                type,
-                config.totalCount
-            );
+            const availableQuestions = await getQuestions(filters, null, type, config.totalCount);
             questions.push(...availableQuestions.slice(0, config.totalCount));
         }
     }
