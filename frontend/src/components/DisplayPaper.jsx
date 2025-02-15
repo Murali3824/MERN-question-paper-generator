@@ -1,4 +1,6 @@
 const DisplayPaper = ({ questions }) => {
+  // console.log("Questions received by DisplayPaper:", questions);
+
   if (!questions) return null;
 
   return (

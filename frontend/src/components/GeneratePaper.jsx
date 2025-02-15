@@ -1,30 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { getSubjects, generatePaper } from '../services/api';
-import { Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useContext } from "react";
+import { Loader2 } from "lucide-react";
+import AppContext from "../context/AppContext";
 
 const GeneratePaper = ({ setQuestions }) => {
+  const { getSubjects, generatePaper } = useContext(AppContext);
+
   const [filters, setFilters] = useState({
-    subject: '',
-    branch: '',
-    regulation: '',
-    year: '',
-    semester: '',
-    unit: '',
+    subject: "",
+    branch: "",
+    regulation: "",
+    year: "",
+    semester: "",
+    unit: "",
   });
 
   const [generationMode, setGenerationMode] = useState({
-    short: 'total', // 'total' or 'unitWise'
-    long: 'total'
+    short: "total", // 'total' or 'unitWise'
+    long: "total",
   });
 
   const [useBtLevels, setUseBtLevels] = useState({
     short: false,
-    long: false
+    long: false,
   });
 
   const [totalCounts, setTotalCounts] = useState({
     short: 0,
-    long: 0
+    long: 0,
   });
 
   const [btLevels, setBtLevels] = useState({
@@ -32,19 +34,23 @@ const GeneratePaper = ({ setQuestions }) => {
       { level: 1, count: 0 },
       { level: 2, count: 0 },
       { level: 3, count: 0 },
-      { level: 4, count: 0 }
+      { level: 4, count: 0 },
     ],
     long: [
       { level: 1, count: 0 },
       { level: 2, count: 0 },
       { level: 3, count: 0 },
-      { level: 4, count: 0 }
-    ]
+      { level: 4, count: 0 },
+    ],
   });
 
   const [unitCounts, setUnitCounts] = useState({
-    short: Array(5).fill(0).map((_, i) => ({ unit: i + 1, count: 0 })),
-    long: Array(5).fill(0).map((_, i) => ({ unit: i + 1, count: 0 }))
+    short: Array(5)
+      .fill(0)
+      .map((_, i) => ({ unit: i + 1, count: 0 })),
+    long: Array(5)
+      .fill(0)
+      .map((_, i) => ({ unit: i + 1, count: 0 })),
   });
 
   const [loading, setLoading] = useState(false);
@@ -57,118 +63,161 @@ const GeneratePaper = ({ setQuestions }) => {
 
   const fetchSubjects = async () => {
     try {
-      const response = await getSubjects();
-      if (response.data.subjects) {
-        setSubjects(response.data.subjects);
+      const subjectsList = await getSubjects();
+
+      if (Array.isArray(subjectsList)) {
+        setSubjects(subjectsList);
+      } else {
+        throw new Error("Invalid API response: Expected an array");
       }
     } catch (err) {
-      console.error('Error fetching subjects:', err);
-      setError(`Failed to fetch subjects: ${err.message}`);
+      console.error("Error fetching subjects:", err);
+      setError(`Failed to fetch subjects: ${err.message || "Unknown error"}`);
     }
   };
 
   const handleFilterChange = (e) => {
-    setFilters(prev => ({
+    setFilters((prev) => ({
       ...prev,
-      [e.target.name]: e.target.value
+      [e.target.name]: e.target.value,
     }));
   };
 
   const handleModeChange = (type, mode) => {
-    setGenerationMode(prev => ({
+    setGenerationMode((prev) => ({
       ...prev,
-      [type]: mode
+      [type]: mode,
     }));
   };
 
   const handleBtLevelToggle = (type) => {
-    setUseBtLevels(prev => ({
+    setUseBtLevels((prev) => ({
       ...prev,
-      [type]: !prev[type]
+      [type]: !prev[type],
     }));
   };
 
   const handleTotalCountChange = (type, count) => {
-    setTotalCounts(prev => ({
+    setTotalCounts((prev) => ({
       ...prev,
-      [type]: parseInt(count) || 0
+      [type]: parseInt(count) || 0,
     }));
   };
 
   const handleBTLevelChange = (type, level, count) => {
-    setBtLevels(prev => ({
+    setBtLevels((prev) => ({
       ...prev,
-      [type]: prev[type].map(bt =>
+      [type]: prev[type].map((bt) =>
         bt.level === level ? { ...bt, count: parseInt(count) || 0 } : bt
-      )
+      ),
     }));
   };
 
   const handleUnitCountChange = (type, unit, count) => {
-    setUnitCounts(prev => ({
+    setUnitCounts((prev) => ({
       ...prev,
-      [type]: prev[type].map(u =>
+      [type]: prev[type].map((u) =>
         u.unit === unit ? { ...u, count: parseInt(count) || 0 } : u
-      )
+      ),
     }));
   };
 
   const getUniqueValues = (field) => {
-    const values = subjects.flatMap(s => Array.isArray(s[field]) ? s[field] : [s[field]]);
+    const values = subjects.flatMap((s) =>
+      Array.isArray(s[field]) ? s[field] : [s[field]]
+    );
     const uniqueValues = [...new Set(values)];
-    return uniqueValues.sort((a, b) => (isNaN(a) ? a.localeCompare(b) : Number(a) - Number(b)));
+    return uniqueValues.sort((a, b) =>
+      isNaN(a) ? a.localeCompare(b) : Number(a) - Number(b)
+    );
   };
 
-  const handleSubmit = async (e) => {
+  const validateConfig = (config, type) => {
+    if (!config[type].useUnitWise && config[type].useBtLevels) {
+        const totalBtCount = Object.values(config[type].btLevelCounts).reduce(
+            (a, b) => a + b,
+            0
+        );
+        if (totalBtCount !== config[type].totalCount) {
+            throw new Error(
+                `For ${type} questions: Total questions (${config[type].totalCount}) must match total BT level questions (${totalBtCount})`
+            );
+        }
+    }
+
+    if (config[type].useUnitWise) {
+        const totalUnitCount = Object.values(config[type].unitCounts).reduce(
+            (a, b) => a + b,
+            0
+        );
+        if (config[type].useBtLevels) {
+            const totalBtCount = Object.values(config[type].btLevelCounts).reduce(
+                (a, b) => a + b,
+                0
+            );
+            if (totalUnitCount !== totalBtCount) {
+                throw new Error(
+                    `For ${type} questions: Total unit-wise count (${totalUnitCount}) must match total BT level count (${totalBtCount})`
+                );
+            }
+        }
+    }
+};
+
+const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const config = {
-      short: {
-        useUnitWise: generationMode.short === 'unitWise',
-        useBtLevels: useBtLevels.short,
-        totalCount: totalCounts.short,
-        btLevelCounts: Object.fromEntries(
-          btLevels.short
-            .filter(bt => bt.count > 0)
-            .map(bt => [bt.level, bt.count])
-        ),
-        unitCounts: Object.fromEntries(
-          unitCounts.short
-            .filter(u => u.count > 0)
-            .map(u => [u.unit, u.count])
-        )
-      },
-      long: {
-        useUnitWise: generationMode.long === 'unitWise',
-        useBtLevels: useBtLevels.long,
-        totalCount: totalCounts.long,
-        btLevelCounts: Object.fromEntries(
-          btLevels.long
-            .filter(bt => bt.count > 0)
-            .map(bt => [bt.level, bt.count])
-        ),
-        unitCounts: Object.fromEntries(
-          unitCounts.long
-            .filter(u => u.count > 0)
-            .map(u => [u.unit, u.count])
-        )
-      }
-    };
-
     try {
-      const response = await generatePaper({
-        ...filters,
-        config
-      });
-      setQuestions(response.data);
+        // Prepare config
+        const config = {
+            short: {
+                useUnitWise: generationMode.short === 'unitWise',
+                useBtLevels: useBtLevels.short,
+                totalCount: totalCounts.short,
+                btLevelCounts: Object.fromEntries(
+                    btLevels.short.filter(bt => bt.count > 0).map(bt => [bt.level, bt.count])
+                ),
+                unitCounts: Object.fromEntries(
+                    unitCounts.short.filter(u => u.count > 0).map(u => [u.unit, u.count])
+                )
+            },
+            long: {
+                useUnitWise: generationMode.long === 'unitWise',
+                useBtLevels: useBtLevels.long,
+                totalCount: totalCounts.long,
+                btLevelCounts: Object.fromEntries(
+                    btLevels.long.filter(bt => bt.count > 0).map(bt => [bt.level, bt.count])
+                ),
+                unitCounts: Object.fromEntries(
+                    unitCounts.long.filter(u => u.count > 0).map(u => [u.unit, u.count])
+                )
+            }
+        };
+
+        // Validate configurations first
+        validateConfig(config, "short");
+        validateConfig(config, "long");
+
+        // Generate paper only if validation passes
+        const response = await generatePaper({
+            ...filters,
+            config
+        });
+
+        if (!response) {
+            throw new Error("No response received from server");
+        }
+
+        setQuestions(response);
     } catch (err) {
-      setError(err.response?.data?.error || err.message);
+        console.error("Error in handleSubmit:", err);
+        setError(err.message || "An error occurred while generating the paper");
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
 
   const renderQuestionConfig = (type) => (
     <div className="space-y-4">
@@ -177,7 +226,7 @@ const GeneratePaper = ({ setQuestions }) => {
           <input
             type="radio"
             value="total"
-            checked={generationMode[type] === 'total'}
+            checked={generationMode[type] === "total"}
             onChange={(e) => handleModeChange(type, e.target.value)}
             className="mr-2"
           />
@@ -187,7 +236,7 @@ const GeneratePaper = ({ setQuestions }) => {
           <input
             type="radio"
             value="unitWise"
-            checked={generationMode[type] === 'unitWise'}
+            checked={generationMode[type] === "unitWise"}
             onChange={(e) => handleModeChange(type, e.target.value)}
             className="mr-2"
           />
@@ -207,7 +256,7 @@ const GeneratePaper = ({ setQuestions }) => {
         </label>
       </div>
 
-      {generationMode[type] === 'total' && (
+      {generationMode[type] === "total" && (
         <div className="flex flex-col">
           <label className="text-sm mb-1">Total Questions</label>
           <input
@@ -222,14 +271,16 @@ const GeneratePaper = ({ setQuestions }) => {
 
       {useBtLevels[type] && (
         <div className="grid grid-cols-4 gap-4">
-          {btLevels[type].map(bt => (
+          {btLevels[type].map((bt) => (
             <div key={bt.level} className="flex flex-col">
               <label className="text-sm mb-1">BT Level {bt.level}</label>
               <input
                 type="number"
                 min="0"
                 value={bt.count}
-                onChange={(e) => handleBTLevelChange(type, bt.level, e.target.value)}
+                onChange={(e) =>
+                  handleBTLevelChange(type, bt.level, e.target.value)
+                }
                 className="w-full p-2 border border-gray-300 rounded-md"
               />
             </div>
@@ -237,16 +288,18 @@ const GeneratePaper = ({ setQuestions }) => {
         </div>
       )}
 
-      {generationMode[type] === 'unitWise' && (
+      {generationMode[type] === "unitWise" && (
         <div className="grid grid-cols-5 gap-4">
-          {unitCounts[type].map(unit => (
+          {unitCounts[type].map((unit) => (
             <div key={unit.unit} className="flex flex-col">
               <label className="text-sm mb-1">Unit {unit.unit}</label>
               <input
                 type="number"
                 min="0"
                 value={unit.count}
-                onChange={(e) => handleUnitCountChange(type, unit.unit, e.target.value)}
+                onChange={(e) =>
+                  handleUnitCountChange(type, unit.unit, e.target.value)
+                }
                 className="w-full p-2 border border-gray-300 rounded-md"
               />
             </div>
@@ -269,8 +322,10 @@ const GeneratePaper = ({ setQuestions }) => {
             required
           >
             <option value="">Select Branch</option>
-            {getUniqueValues('branch').map(branch => (
-              <option key={branch} value={branch}>{branch}</option>
+            {getUniqueValues("branch").map((branch) => (
+              <option key={branch} value={branch}>
+                {branch}
+              </option>
             ))}
           </select>
 
@@ -282,8 +337,10 @@ const GeneratePaper = ({ setQuestions }) => {
             required
           >
             <option value="">Select Regulation</option>
-            {getUniqueValues('regulation').map(reg => (
-              <option key={reg} value={reg}>{reg}</option>
+            {getUniqueValues("regulation").map((reg) => (
+              <option key={reg} value={reg}>
+                {reg}
+              </option>
             ))}
           </select>
 
@@ -295,8 +352,10 @@ const GeneratePaper = ({ setQuestions }) => {
             required
           >
             <option value="">Select Year</option>
-            {getUniqueValues('year').map(year => (
-              <option key={year} value={year}>{year}</option>
+            {getUniqueValues("year").map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
             ))}
           </select>
 
@@ -308,8 +367,10 @@ const GeneratePaper = ({ setQuestions }) => {
             required
           >
             <option value="">Select Semester</option>
-            {getUniqueValues('semester').map(sem => (
-              <option key={sem} value={sem}>{sem}</option>
+            {getUniqueValues("semester").map((sem) => (
+              <option key={sem} value={sem}>
+                {sem}
+              </option>
             ))}
           </select>
 
@@ -322,13 +383,21 @@ const GeneratePaper = ({ setQuestions }) => {
           >
             <option value="">Select Subject</option>
             {subjects
-              .filter(s =>
-                (!filters.branch || s.branch === filters.branch) &&
-                (!filters.regulation || s.regulation === filters.regulation) &&
-                (!filters.year || (Array.isArray(s.year) ? s.year.includes(filters.year) : s.year === filters.year)) &&
-                (!filters.semester || (Array.isArray(s.semester) ? s.semester.includes(Number(filters.semester)) : s.semester === Number(filters.semester)))
+              .filter(
+                (s) =>
+                  (!filters.branch || s.branch === filters.branch) &&
+                  (!filters.regulation ||
+                    s.regulation === filters.regulation) &&
+                  (!filters.year ||
+                    (Array.isArray(s.year)
+                      ? s.year.includes(filters.year)
+                      : s.year === filters.year)) &&
+                  (!filters.semester ||
+                    (Array.isArray(s.semester)
+                      ? s.semester.includes(Number(filters.semester))
+                      : s.semester === Number(filters.semester)))
               )
-              .map(s => (
+              .map((s) => (
                 <option key={s.subjectCode} value={s.subjectCode}>
                   {s.subject} ({s.subjectCode})
                 </option>
@@ -342,8 +411,10 @@ const GeneratePaper = ({ setQuestions }) => {
             className="w-full p-2 border border-gray-300 rounded-md"
           >
             <option value="">All Units</option>
-            {[1, 2, 3, 4, 5].map(unit => (
-              <option key={unit} value={unit}>Unit {unit}</option>
+            {[1, 2, 3, 4, 5].map((unit) => (
+              <option key={unit} value={unit}>
+                Unit {unit}
+              </option>
             ))}
           </select>
         </div>
@@ -352,19 +423,17 @@ const GeneratePaper = ({ setQuestions }) => {
         <div className="space-y-6">
           <div>
             <h3 className="font-semibold mb-2">Short Answer Questions</h3>
-            {renderQuestionConfig('short')}
+            {renderQuestionConfig("short")}
           </div>
 
           <div>
             <h3 className="font-semibold mb-2">Long Answer Questions</h3>
-            {renderQuestionConfig('long')}
+            {renderQuestionConfig("long")}
           </div>
         </div>
 
         {error && (
-          <div className="bg-red-50 text-red-500 p-3 rounded-md">
-            {error}
-          </div>
+          <div className="bg-red-50 text-red-500 p-3 rounded-md">{error}</div>
         )}
 
         <button
@@ -378,7 +447,7 @@ const GeneratePaper = ({ setQuestions }) => {
               Generating...
             </>
           ) : (
-            'Generate Paper'
+            "Generate Paper"
           )}
         </button>
       </form>

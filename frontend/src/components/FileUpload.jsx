@@ -1,7 +1,11 @@
-import { useState } from "react";
-import { uploadFile } from "../services/api";
+import { useContext, useState } from "react";
+// import { uploadFile } from "../services/api";
+import AppContext from "../context/AppContext";
 
 const FileUpload = () => {
+
+  const { uploadFile } = useContext(AppContext);
+
   const [file, setFile] = useState(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -19,32 +23,35 @@ const FileUpload = () => {
 
   const handleUpload = async () => {
     if (!file) {
-      setMessage("Please select a file");
-      return;
+        setMessage("Please select a file");
+        return;
     }
 
     setIsLoading(true);
     try {
-      const response = await uploadFile(file);
-      setMessage(`✅ File uploaded successfully! ${response.data.count} questions processed.`);
-      setFile(null);
-      // Reset the file input
-      const fileInput = document.querySelector('input[type="file"]');
-      if (fileInput) fileInput.value = "";
+        const response = await uploadFile(file);
+        console.log("File upload success response:", response); // Debugging log
+
+        const processedCount = response?.count || 0; // Ensure `count` exists
+        setMessage(`✅ File uploaded successfully! ${processedCount} questions processed.`);
+        
+        setFile(null);
+        document.querySelector('input[type="file"]').value = "";
     } catch (error) {
-      console.error(error);
-      const errorMessage = error.response?.data?.error || "❌ File upload failed";
-      const missingHeaders = error.response?.data?.missingHeaders;
-      
-      if (missingHeaders) {
-        setMessage(`${errorMessage}: ${missingHeaders.join(', ')}`);
-      } else {
-        setMessage(errorMessage);
-      }
+        console.error("Upload error:", error);
+        const errorMessage = error.response?.data?.error || "❌ File upload failed";
+        const missingHeaders = error.response?.data?.missingHeaders;
+        
+        if (missingHeaders) {
+            setMessage(`${errorMessage}: ${missingHeaders.join(', ')}`);
+        } else {
+            setMessage(errorMessage);
+        }
     } finally {
-      setIsLoading(false);
+        setIsLoading(false);
     }
-  };
+};
+
 
   return (
     <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
